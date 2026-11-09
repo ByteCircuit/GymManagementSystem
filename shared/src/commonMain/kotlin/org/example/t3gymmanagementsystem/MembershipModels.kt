@@ -36,6 +36,10 @@ data class NewMember(
     val studentIdNumber: String = "",
     /** The chosen plan. When null, the first plan of [kind] is used. */
     val planId: Long? = null,
+    /** Which eligibility type staff verified (when isStudent is true). */
+    val eligibilityTypeId: Long? = null,
+    /** Optional photo of the ID or document shown. Stored in the database so backups include it. */
+    val eligibilityDocument: ByteArray? = null,
 )
 
 data class Registration(

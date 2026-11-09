@@ -1,4 +1,5 @@
 package org.example.t3gymmanagementsystem.services
+import org.example.t3gymmanagementsystem.StockCount
 
 import org.example.t3gymmanagementsystem.DayPoint
 import org.example.t3gymmanagementsystem.MethodLine
@@ -255,9 +256,15 @@ class ReportService(
             "SELECT name, sku, stock, low_stock_level FROM products WHERE active = 1 AND stock <= low_stock_level ORDER BY stock, name COLLATE NOCASE LIMIT 50",
         ) { rs -> alerts += StockAlert(rs.getString(1), rs.getString(2), rs.getInt(3), rs.getInt(4)) }
 
+        val counts = mutableListOf<StockCount>()
+        query(
+            c,
+            "SELECT name, sku, category, stock, low_stock_level FROM products WHERE active = 1 ORDER BY name COLLATE NOCASE LIMIT 500",
+        ) { rs -> counts += StockCount(rs.getString(1) ?: "", rs.getString(2) ?: "", rs.getString(3) ?: "", rs.getInt(4), rs.getInt(5)) }
+
         return ReportBundle(
             s, e, previousStart.toString(), previousEnd.toString(), days, current, previous,
-            daily, plans, methods, types, top, members, distinct, denied, peak, alerts,
+            daily, plans, methods, types, top, members, distinct, denied, peak, alerts, counts,
         )
     }
 }

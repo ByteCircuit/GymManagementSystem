@@ -24,6 +24,8 @@ object Migrations {
         5 to "db/migrations/V005__nfc_attendance_walkins.sql",
         6 to "db/migrations/V006__denied_scans.sql",
         7 to "db/migrations/V007__products_and_stock.sql",
+        8 to "db/migrations/V008__eligibility_types.sql",
+        9 to "db/migrations/V009__plan_duration_count.sql",
     )
 
     fun all(): List<Migration> = files.map { (version, path) ->

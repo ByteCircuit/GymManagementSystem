@@ -6,7 +6,7 @@ import java.sql.Connection
 import java.sql.ResultSet
 import java.sql.Statement
 
-data class PlanRow(val id: Long, val name: String, val kind: MembershipKind, val priceCents: Long, val active: Boolean)
+data class PlanRow(val id: Long, val name: String, val kind: MembershipKind, val priceCents: Long, val active: Boolean, val eligibilityTypeId: Long? = null, val durationCount: Int = 1)
 
 class PlanRepository(private val db: DatabaseManager) {
 
@@ -15,10 +15,10 @@ class PlanRepository(private val db: DatabaseManager) {
     private fun ResultSet.toPlan() = PlanRow(
         getLong(1), getString(2),
         if (getString(3) == "MONTHLY") MembershipKind.Monthly else MembershipKind.Daily,
-        getLong(4), getInt(5) == 1,
+        getLong(4), getInt(5) == 1, getLong(6).takeIf { !wasNull() }, getInt(7),
     )
 
-    private val columns = "id, name, duration, price_cents, active"
+    private val columns = "id, name, duration, price_cents, active, eligibility_type_id, duration_count"
 
     fun count(): Int = db.withConnection { c ->
         c.createStatement().use { s -> s.executeQuery("SELECT count(*) FROM membership_plans").use { rs -> rs.next(); rs.getInt(1) } }
@@ -43,7 +43,7 @@ class PlanRepository(private val db: DatabaseManager) {
     }
 
     fun firstActive(kind: MembershipKind): PlanRow? = db.withConnection { c ->
-        c.prepareStatement("SELECT $columns FROM membership_plans WHERE active = 1 AND duration = ? ORDER BY id LIMIT 1").use { ps ->
+        c.prepareStatement("SELECT $columns FROM membership_plans WHERE active = 1 AND duration = ? AND duration_count = 1 AND eligibility_type_id IS NULL ORDER BY id LIMIT 1").use { ps ->
             ps.setString(1, code(kind))
             ps.executeQuery().use { rs -> if (rs.next()) rs.toPlan() else null }
         }
@@ -90,6 +90,32 @@ class PlanRepository(private val db: DatabaseManager) {
         db.transaction<Unit> { c ->
             c.prepareStatement("DELETE FROM membership_plans WHERE id = ?").use { ps ->
                 ps.setLong(1, id)
+                ps.executeUpdate()
+            }
+        }
+    }
+
+    fun insertWith(name: String, kind: MembershipKind, priceCents: Long, eligibilityTypeId: Long?, durationCount: Int = 1): Long = db.transaction<Long> { c ->
+        c.prepareStatement("INSERT INTO membership_plans(name, duration, price_cents, eligibility_type_id, duration_count) VALUES (?,?,?,?,?)", Statement.RETURN_GENERATED_KEYS).use { ps ->
+            ps.setString(1, name)
+            ps.setString(2, code(kind))
+            ps.setLong(3, priceCents)
+            if (eligibilityTypeId == null) ps.setNull(4, java.sql.Types.INTEGER) else ps.setLong(4, eligibilityTypeId)
+            ps.setInt(5, durationCount)
+            ps.executeUpdate()
+            ps.generatedKeys.use { rs -> rs.next(); rs.getLong(1) }
+        }
+    }
+
+    fun updateWith(id: Long, name: String, kind: MembershipKind, priceCents: Long, eligibilityTypeId: Long?, durationCount: Int = 1) {
+        db.transaction<Unit> { c ->
+            c.prepareStatement("UPDATE membership_plans SET name = ?, duration = ?, price_cents = ?, eligibility_type_id = ?, duration_count = ? WHERE id = ?").use { ps ->
+                ps.setString(1, name)
+                ps.setString(2, code(kind))
+                ps.setLong(3, priceCents)
+                if (eligibilityTypeId == null) ps.setNull(4, java.sql.Types.INTEGER) else ps.setLong(4, eligibilityTypeId)
+                ps.setInt(5, durationCount)
+                ps.setLong(6, id)
                 ps.executeUpdate()
             }
         }

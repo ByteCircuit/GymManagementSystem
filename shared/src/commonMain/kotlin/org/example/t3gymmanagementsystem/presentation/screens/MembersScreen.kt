@@ -1,4 +1,5 @@
 package org.example.t3gymmanagementsystem.presentation.screens
+import org.example.t3gymmanagementsystem.presentation.navigation.ScreenIntent
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
@@ -37,6 +38,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.example.t3gymmanagementsystem.AppServices
 import org.example.t3gymmanagementsystem.DiscountType
+import org.example.t3gymmanagementsystem.EligibilityType
 import org.example.t3gymmanagementsystem.MemberDetail
 import org.example.t3gymmanagementsystem.MemberRow
 import org.example.t3gymmanagementsystem.MemberStatus
@@ -72,7 +74,7 @@ private sealed interface MembersView {
 
 @Composable
 fun MembersScreen(services: AppServices, onMessage: (String, Boolean) -> Unit) {
-    var view by remember { mutableStateOf<MembersView>(MembersView.Directory) }
+    var view by remember { mutableStateOf<MembersView>(if (ScreenIntent.takeRegister()) MembersView.Register else MembersView.Directory) }
     when (val v = view) {
         MembersView.Directory -> Directory(
             services, onMessage,
@@ -151,7 +153,7 @@ private fun QuoteLines(quote: Outcome<Quote>?) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 LineRow("Period", q.periodLabel)
                 LineRow("Price", Money.format(q.subtotalCents))
-                if (q.discountCents > 0) LineRow("Student discount", "- " + Money.format(q.discountCents))
+                if (q.discountCents > 0) LineRow("Discount", "- " + Money.format(q.discountCents))
                 LineRow("Total", Money.format(q.totalCents), strong = true)
             }
         }
@@ -459,7 +461,7 @@ private fun RenewPanel(
 @Composable
 private fun RegisterWizard(services: AppServices, onMessage: (String, Boolean) -> Unit, onCancel: () -> Unit, onDone: (Long) -> Unit) {
     val scope = rememberCoroutineScope()
-    val stepTitles = listOf("Profile", "Membership", "Verification", "Payment")
+    val stepTitles = listOf("Profile", "Eligibility", "Membership", "Payment")
     var step by remember { mutableStateOf(0) }
 
     var name by remember { mutableStateOf("") }
@@ -473,6 +475,10 @@ private fun RegisterWizard(services: AppServices, onMessage: (String, Boolean) -
     var plans by remember { mutableStateOf<List<Plan>>(emptyList()) }
     LaunchedEffect(Unit) { plans = runCatching { services.listPlans() }.getOrDefault(emptyList()) }
     var student by remember { mutableStateOf(false) }
+    var eligibleTypeId by remember { mutableStateOf<Long?>(null) }
+    var eligibilityTypes by remember { mutableStateOf<List<EligibilityType>>(emptyList()) }
+    var idDoc by remember { mutableStateOf<PickedPhoto?>(null) }
+    LaunchedEffect(Unit) { eligibilityTypes = runCatching { services.listEligibilityTypes() }.getOrDefault(emptyList()) }
     var school by remember { mutableStateOf("") }
     var idNumber by remember { mutableStateOf("") }
     var methodIndex by remember { mutableStateOf(0) }
@@ -482,10 +488,11 @@ private fun RegisterWizard(services: AppServices, onMessage: (String, Boolean) -
     var discount by remember { mutableStateOf<StudentDiscount?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
-    val selectedPlan = plans.getOrNull(kindIndex)
+    val visiblePlans = plans.filter { it.eligibilityTypeId == null || (student && it.eligibilityTypeId == eligibleTypeId) }
+    val selectedPlan = visiblePlans.getOrNull(kindIndex)
     val kind = selectedPlan?.kind ?: MembershipKind.Monthly
 
-    LaunchedEffect(kindIndex, student, plans) {
+    LaunchedEffect(kindIndex, student, plans, eligibleTypeId) {
         quote = null
         quote = runCatching { services.quotePlan(selectedPlan?.id ?: -1L, student) }
             .getOrElse { Outcome.Fail(it.message ?: "Could not price the membership.") }
@@ -499,6 +506,7 @@ private fun RegisterWizard(services: AppServices, onMessage: (String, Boolean) -
             val input = NewMember(
                 fullName = name, contact = contact, email = email, address = address, emergencyContact = emergency,
                 kind = kind, isStudent = student, schoolName = school, studentIdNumber = idNumber, planId = selectedPlan?.id,
+                eligibilityTypeId = eligibleTypeId, eligibilityDocument = idDoc?.bytes,
                 payment = PaymentInfo(PaymentMethod.entries[methodIndex], note),
             )
             val result = runCatching { services.registerMember(input) }
@@ -533,8 +541,8 @@ private fun RegisterWizard(services: AppServices, onMessage: (String, Boolean) -
                 contact.isBlank() -> error = "Enter a contact number."
                 else -> step = 1
             }
-            1 -> if (quote is Outcome.Ok) step = 2 else error = (quote as? Outcome.Fail)?.message ?: "Wait for the price to load."
-            2 -> step = 3
+            1 -> if (student && eligibleTypeId == null) error = "Choose the eligibility type." else step = 2
+            2 -> if (quote is Outcome.Ok) step = 3 else error = (quote as? Outcome.Fail)?.message ?: "Wait for the price to load."
             else -> submit()
         }
     }
@@ -578,36 +586,45 @@ private fun RegisterWizard(services: AppServices, onMessage: (String, Boolean) -
                         GxTextField("Address (optional)", address, { address = it }, Modifier.fillMaxWidth())
                         GxTextField("Emergency contact (optional)", emergency, { emergency = it }, Modifier.fillMaxWidth())
                     }
-                    1 -> {
+                    2 -> {
                         LineRow("Member number", "Assigned automatically when saved")
                         Text("PLAN", color = Gx.Faint, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.9.sp)
                         GxDropdown(
-                            if (plans.isEmpty()) listOf("No plans yet. Create one on the Memberships page.") else plans.map { "${it.name} - ${Money.format(it.priceCents)}" },
+                            if (visiblePlans.isEmpty()) listOf("No plans available. Create one on the Memberships page.") else visiblePlans.map { "${it.name} - ${Money.format(it.priceCents)}" + (it.eligibilityName?.let { n -> " ($n only)" } ?: "") },
                             kindIndex, { kindIndex = it; error = null }, Modifier.fillMaxWidth(),
                         )
                         QuoteLines(quote)
                     }
-                    2 -> {
-                        GxSwitch("Staff confirm this person is an eligible student", student, { student = it })
+                    1 -> {
+                        GxSwitch(
+                            "Staff confirm this person is eligible for a discount",
+                            student,
+                            { student = it; eligibleTypeId = if (it) eligibilityTypes.firstOrNull()?.id else null; kindIndex = 0 },
+                        )
                         Text(
-                            "Only staff decide eligibility. No certificate of registration is needed.",
+                            "Only staff decide eligibility. An ID photo or document is optional.",
                             color = Gx.Muted, fontSize = 11.sp,
                         )
                         if (student) {
-                            if (kind == MembershipKind.Daily) {
-                                Text("The student discount applies to Monthly memberships only.", color = Gx.Amber, fontSize = 11.sp)
-                            }
-                            val d = discount
-                            Text(
-                                when {
-                                    d == null || !d.enabled -> "No student discount is active, so the full price is charged."
-                                    d.type == DiscountType.Percentage -> "Student discount: ${d.value}% off the Monthly price."
-                                    else -> "Student discount: ${Money.format(d.value)} off the Monthly price."
-                                },
-                                color = Gx.TextSoft, fontSize = 12.sp,
+                            Text("ELIGIBILITY TYPE", color = Gx.Faint, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.9.sp)
+                            GxDropdown(
+                                if (eligibilityTypes.isEmpty()) listOf("No types yet. Add one on the Memberships page.") else eligibilityTypes.map { it.name },
+                                eligibilityTypes.indexOfFirst { it.id == eligibleTypeId }.coerceAtLeast(0),
+                                { eligibleTypeId = eligibilityTypes.getOrNull(it)?.id; kindIndex = 0; error = null },
+                                Modifier.fillMaxWidth(),
                             )
-                            GxTextField("School (optional)", school, { school = it }, Modifier.fillMaxWidth())
-                            GxTextField("Student ID number (optional)", idNumber, { idNumber = it }, Modifier.fillMaxWidth())
+                            Text("Discount plans are listed in the next step for verified members.", color = Gx.Muted, fontSize = 12.sp)
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                GxButton(if (idDoc == null) "Attach ID photo (optional)" else "Replace ID photo", onClick = {
+                                    scope.launch {
+                                        runCatching { services.choosePhoto() }
+                                            .onSuccess { if (it != null) idDoc = it }
+                                            .onFailure { onMessage(it.message ?: "Could not read the file.", true) }
+                                    }
+                                })
+                                if (idDoc != null) TextAction("Remove") { idDoc = null }
+                            }
+                            GxTextField("ID number (optional)", idNumber, { idNumber = it }, Modifier.fillMaxWidth())
                         }
                     }
                     else -> {

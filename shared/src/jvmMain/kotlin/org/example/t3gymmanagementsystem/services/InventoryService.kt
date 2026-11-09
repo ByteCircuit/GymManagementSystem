@@ -72,14 +72,14 @@ class InventoryService(
             }
         }
 
-    fun movements(): List<MovementRow> = repo.movements(300).map {
+    fun movements(): List<MovementRow> = repo.movements(1000).map {
         MovementRow(
             label(it.at), it.productName, it.sku,
             when (it.kind) {
                 "INITIAL" -> "Opening stock"
                 "RESTOCK" -> "Restock"
                 "SALE" -> "Sale"
-                else -> "Adjustment"
+                else -> if (it.note.orEmpty().startsWith("Void ")) "Voided sale" else "Adjustment"
             },
             it.change, it.after, it.note.orEmpty(),
         )
@@ -157,6 +157,28 @@ class InventoryService(
     }
 
     // ---- point of sale ----
+
+    /** Cancels a completed product sale: stock goes back and the sale stops counting in payments and reports. */
+    fun voidSale(reference: String, reason: String): Outcome<Unit> {
+        val why = reason.trim()
+        if (why.length < 3) return Outcome.Fail("Enter a reason for voiding this sale.")
+        return db.transaction<Outcome<Unit>> { c ->
+            val sale = repo.findSale(c, reference.trim())
+            if (sale == null) {
+                Outcome.Fail("That sale was not found.")
+            } else if (sale.status != "COMPLETED") {
+                Outcome.Fail("That sale is already ${sale.status.lowercase()}.")
+            } else {
+                for (line in repo.saleLines(c, sale.id)) {
+                    if (!repo.changeStock(c, line.productId, line.quantity)) throw IllegalStateException("Could not return stock for a product in this sale.")
+                    val after = repo.get(c, line.productId)?.stock ?: 0
+                    repo.insertMovement(c, line.productId, "ADJUSTMENT", line.quantity, after, "Void $reference: $why", sale.id)
+                }
+                if (!repo.markCancelled(c, sale.id)) throw IllegalStateException("The sale could not be cancelled.")
+                Outcome.Ok(Unit)
+            }
+        }
+    }
 
     fun sell(memberId: Long?, lines: List<CartLine>, payment: PaymentInfo): Outcome<ProductSaleResult> {
         val merged = lines.filter { it.quantity > 0 }

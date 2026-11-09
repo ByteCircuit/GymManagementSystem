@@ -1,4 +1,5 @@
 package org.example.t3gymmanagementsystem.presentation.screens
+import org.example.t3gymmanagementsystem.presentation.navigation.ScreenIntent
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -523,7 +524,7 @@ private fun WalkInLog(walkIns: List<WalkInRow>) {
 
 @Composable
 fun AttendanceScreen(services: AppServices, onMessage: (String, Boolean) -> Unit) {
-    var tab by remember { mutableStateOf(0) }
+    var tab by remember { mutableStateOf(if (ScreenIntent.takeAttendanceNfc()) 1 else 0) }
     var rows by remember { mutableStateOf<List<AttendanceRow>>(emptyList()) }
     var walkIns by remember { mutableStateOf<List<WalkInRow>>(emptyList()) }
     var denied by remember { mutableStateOf<List<DeniedRow>>(emptyList()) }

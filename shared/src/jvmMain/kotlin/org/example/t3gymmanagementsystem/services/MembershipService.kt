@@ -7,6 +7,7 @@ import org.example.t3gymmanagementsystem.CheckInStatus
 import org.example.t3gymmanagementsystem.WalkInRow
 import org.example.t3gymmanagementsystem.WalkInResult
 import org.example.t3gymmanagementsystem.DiscountType
+import org.example.t3gymmanagementsystem.EligibilityType
 import org.example.t3gymmanagementsystem.MemberDetail
 import org.example.t3gymmanagementsystem.MemberRow
 import org.example.t3gymmanagementsystem.MemberStatus
@@ -24,6 +25,7 @@ import org.example.t3gymmanagementsystem.Registration
 import org.example.t3gymmanagementsystem.RenewalRow
 import org.example.t3gymmanagementsystem.StudentDiscount
 import org.example.t3gymmanagementsystem.data.database.DatabaseManager
+import org.example.t3gymmanagementsystem.data.repositories.EligibilityRepository
 import org.example.t3gymmanagementsystem.data.repositories.MemberRepository
 import org.example.t3gymmanagementsystem.data.repositories.PaymentRepository
 import org.example.t3gymmanagementsystem.data.repositories.PlanRepository
@@ -60,6 +62,9 @@ class MembershipService(
     private val payments = PaymentRepository(db)
     private val renewalRepo = RenewalRepository(db)
     private val plansRepo = PlanRepository(db)
+    private val eligibilityRepo = EligibilityRepository(db)
+    /** Plans carry their own discounted price, so the old global percentage/fixed discount is switched off. */
+    private val globalDiscountActive = false
     private val dateFormat = DateTimeFormatter.ofPattern("MMM dd, yyyy", Locale.ENGLISH)
 
     // ---- plans ----
@@ -78,23 +83,26 @@ class MembershipService(
 
     fun listPlans(): List<Plan> {
         ensurePlans()
-        return plansRepo.list().map { Plan(it.id, it.name, it.kind, it.priceCents, plansRepo.usage(it.id) > 0) }
+        val typeNames = eligibilityRepo.names()
+        return plansRepo.list().map { Plan(it.id, it.name, it.kind, it.priceCents, plansRepo.usage(it.id) > 0, it.eligibilityTypeId, it.eligibilityTypeId?.let { tid -> typeNames[tid] }, durationCount = it.durationCount) }
     }
 
     fun savePlan(input: PlanInput): Outcome<Long> {
+        if (input.durationCount < 1 || input.durationCount > (if (input.kind == MembershipKind.Monthly) 120 else 3650)) return Outcome.Fail("Enter a duration of 1 to 120 months or 1 to 3650 days.")
         ensurePlans()
         val name = input.name.trim()
         if (name.isEmpty()) return Outcome.Fail("Enter a plan name.")
         if (name.length > 40) return Outcome.Fail("Keep the plan name to 40 characters or fewer.")
         if (input.priceCents <= 0) return Outcome.Fail("Price must be greater than 0.")
         if (plansRepo.activeNameExists(name, input.id)) return Outcome.Fail("A plan named \"$name\" already exists.")
-        val id = input.id ?: return Outcome.Ok(plansRepo.insert(name, input.kind, input.priceCents))
+        if (input.eligibilityTypeId != null && eligibilityRepo.find(input.eligibilityTypeId)?.active != true) return Outcome.Fail("That eligibility type is no longer available.")
+        val id = input.id ?: return Outcome.Ok(plansRepo.insertWith(name, input.kind, input.priceCents, input.eligibilityTypeId, input.durationCount))
         val existing = plansRepo.find(id)
         if (existing == null || !existing.active) return Outcome.Fail("That plan is no longer available.")
         if (existing.kind != input.kind && plansRepo.usage(id) > 0) {
             return Outcome.Fail("The duration can't change after the plan has been used. Create a new plan instead.")
         }
-        plansRepo.update(id, name, input.kind, input.priceCents)
+        plansRepo.updateWith(id, name, input.kind, input.priceCents, input.eligibilityTypeId, input.durationCount)
         return Outcome.Ok(id)
     }
 
@@ -155,6 +163,32 @@ class MembershipService(
         else plansRepo.insert(kind.label, kind, cents)
     }
 
+    // ---- eligibility types ----
+
+    fun listEligibilityTypes(): List<EligibilityType> =
+        eligibilityRepo.listActive().map { EligibilityType(it.id, it.name, eligibilityRepo.usage(it.id) > 0) }
+
+    fun saveEligibilityType(name: String): Outcome<Long> {
+        val n = name.trim()
+        if (n.isEmpty()) return Outcome.Fail("Enter a type name.")
+        if (n.length > 30) return Outcome.Fail("Keep the name to 30 characters or fewer.")
+        if (eligibilityRepo.activeNameExists(n)) return Outcome.Fail("\"$n\" already exists.")
+        return Outcome.Ok(eligibilityRepo.insert(n))
+    }
+
+    /** Unused types are deleted; types in use are archived so members and plans keep them. */
+    fun deleteEligibilityType(id: Long): Outcome<String> {
+        val type = eligibilityRepo.find(id)
+        if (type == null || !type.active) return Outcome.Fail("That type is no longer available.")
+        return if (eligibilityRepo.usage(id) == 0) {
+            eligibilityRepo.delete(id)
+            Outcome.Ok("Type deleted.")
+        } else {
+            eligibilityRepo.archive(id)
+            Outcome.Ok("Type archived. Members and plans that use it keep it, but it can't be chosen for new ones.")
+        }
+    }
+
     // ---- student discount ----
 
     fun getDiscount(): StudentDiscount? {
@@ -191,7 +225,7 @@ class MembershipService(
 
     private fun priceOf(plan: PlanRow, student: Boolean): Price {
         var discount = 0L
-        if (plan.kind == MembershipKind.Monthly && student) {
+        if (globalDiscountActive && plan.kind == MembershipKind.Monthly && student && plan.eligibilityTypeId == null) {
             val rule = getDiscount()
             if (rule != null && rule.enabled) {
                 discount = when (rule.type) {
@@ -204,6 +238,10 @@ class MembershipService(
     }
 
     // ---- dates ----
+
+    /** A plan lasts count months (Monthly) or count days (Daily). One day ends the day it starts. */
+    private fun periodEnd(kind: MembershipKind, count: Int, start: LocalDate): LocalDate =
+        if (kind == MembershipKind.Monthly) start.plusMonths(count.toLong()) else start.plusDays((count - 1).toLong())
 
     private fun periodEnd(kind: MembershipKind, start: LocalDate): LocalDate =
         if (kind == MembershipKind.Monthly) start.plusMonths(1) else start
@@ -255,7 +293,7 @@ class MembershipService(
             is Outcome.Ok -> planResult.value
         }
         val price = priceOf(plan, student)
-        val end = periodEnd(plan.kind, start)
+        val end = periodEnd(plan.kind, plan.durationCount, start)
         return Outcome.Ok(Quote(price.subtotal, price.discount, price.total, periodLabel(start, end)))
     }
 
@@ -270,9 +308,14 @@ class MembershipService(
             is Outcome.Fail -> return r
             is Outcome.Ok -> r.value
         }
+        val typeId = if (input.isStudent) input.eligibilityTypeId else null
+        if (input.isStudent && (typeId == null || eligibilityRepo.find(typeId)?.active != true)) return Outcome.Fail("Choose the eligibility type.")
+        plan.eligibilityTypeId?.let { need ->
+            if (typeId != need) return Outcome.Fail("This plan is only for ${eligibilityRepo.find(need)?.name ?: "eligible"} members. Verify the member first.")
+        }
         val price = priceOf(plan, input.isStudent)
         val start = today()
-        val end = periodEnd(plan.kind, start)
+        val end = periodEnd(plan.kind, plan.durationCount, start)
         val pattern = settings.getOrDefault(SettingKeys.MEMBER_NUMBER_FORMAT, "%04dA")
 
         return db.transaction<Outcome<Registration>> { c ->
@@ -284,11 +327,7 @@ class MembershipService(
                 input.emergencyContact.trim().ifEmpty { null },
             )
             if (input.isStudent) {
-                members.insertStudentVerification(
-                    c, memberId,
-                    input.studentIdNumber.trim().ifEmpty { null },
-                    input.schoolName.trim().ifEmpty { null },
-                )
+                members.insertVerification(c, memberId, typeId, input.studentIdNumber.trim().ifEmpty { null }, input.schoolName.trim().ifEmpty { null }, input.eligibilityDocument)
             }
             val txType = if (plan.kind == MembershipKind.Monthly) "MONTHLY_MEMBERSHIP" else "DAILY_MEMBERSHIP"
             val description = "${plan.name} membership (${periodLabel(start, end)})"
@@ -311,9 +350,12 @@ class MembershipService(
             is Outcome.Fail -> return planResult
             is Outcome.Ok -> planResult.value
         }
+        plan.eligibilityTypeId?.let { need ->
+            if (members.verifiedTypeId(memberId) != need) return Outcome.Fail("This plan is only for ${eligibilityRepo.find(need)?.name ?: "eligible"} members. This member is not verified for it.")
+        }
         val price = priceOf(plan, members.isVerifiedStudent(memberId))
         val start = renewalStart(memberId)
-        val end = periodEnd(plan.kind, start)
+        val end = periodEnd(plan.kind, plan.durationCount, start)
         val previousId = members.latestMembershipId(memberId)
 
         return db.transaction<Outcome<Registration>> { c ->
@@ -419,7 +461,7 @@ class MembershipService(
                 it.school?.takeIf { s -> s.isNotBlank() },
                 it.idNumber?.takeIf { n -> n.isNotBlank() }?.let { n -> "ID $n" },
             )
-            if (parts.isEmpty()) "Verified student" else parts.joinToString(" \u00B7 ")
+            (listOf(eligibilityRepo.typeNameOf(id) ?: "Verified") + parts).joinToString(" \u00B7 ")
         }
         return MemberDetail(
             id = m.id,

@@ -117,6 +117,13 @@ class JvmAppServices(dbPath: Path = DatabaseLocation.resolve()) : AppServices {
 
     override suspend fun getDiscount(): StudentDiscount? = withContext(Dispatchers.IO) { memberships.getDiscount() }
 
+    override suspend fun listEligibilityTypes(): List<org.example.t3gymmanagementsystem.EligibilityType> =
+        withContext(Dispatchers.IO) { memberships.listEligibilityTypes() }
+
+    override suspend fun saveEligibilityType(name: String): Outcome<Long> = guarded { memberships.saveEligibilityType(name) }
+
+    override suspend fun deleteEligibilityType(id: Long): Outcome<String> = guarded { memberships.deleteEligibilityType(id) }
+
     override suspend fun saveDiscount(discount: StudentDiscount): Outcome<Unit> =
         guarded { memberships.saveDiscount(discount) }
 
@@ -271,6 +278,7 @@ class JvmAppServices(dbPath: Path = DatabaseLocation.resolve()) : AppServices {
     override suspend fun sellProducts(memberId: Long?, lines: List<CartLine>, payment: PaymentInfo): Outcome<ProductSaleResult> =
         guarded { memberships.inventory.sell(memberId, lines, payment) }
 
+    override suspend fun voidProductSale(reference: String, reason: String): Outcome<Unit> = guarded { memberships.inventory.voidSale(reference, reason) }
     override suspend fun recentProductSales(): List<ProductSaleRow> =
         withContext(Dispatchers.IO) { memberships.inventory.recentSales() }
 

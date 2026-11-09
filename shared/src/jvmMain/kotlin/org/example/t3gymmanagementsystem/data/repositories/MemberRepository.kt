@@ -128,6 +128,29 @@ class MemberRepository(private val db: DatabaseManager) {
 
     fun isVerifiedStudent(memberId: Long): Boolean = student(memberId) != null
 
+    /** The eligibility type the member was last verified for, or null when not verified (or an old record has no type). */
+    fun verifiedTypeId(memberId: Long): Long? = db.withConnection { c ->
+        c.prepareStatement(
+            "SELECT eligibility_type_id FROM student_verifications WHERE member_id = ? AND verified = 1 ORDER BY id DESC LIMIT 1"
+        ).use { ps ->
+            ps.setLong(1, memberId)
+            ps.executeQuery().use { rs -> if (rs.next()) rs.getLong(1).takeIf { !rs.wasNull() } else null }
+        }
+    }
+
+    fun insertVerification(c: Connection, memberId: Long, typeId: Long?, idNumber: String?, school: String?, document: ByteArray?) {
+        c.prepareStatement(
+            "INSERT INTO student_verifications(member_id, id_number, school_name, verified, eligibility_type_id, document) VALUES (?,?,?,1,?,?)"
+        ).use { ps ->
+            ps.setLong(1, memberId)
+            ps.setNullable(2, idNumber)
+            ps.setNullable(3, school)
+            if (typeId == null) ps.setNull(4, Types.INTEGER) else ps.setLong(4, typeId)
+            if (document == null) ps.setNull(5, Types.BLOB) else ps.setBytes(5, document)
+            ps.executeUpdate()
+        }
+    }
+
     fun latestEndDate(memberId: Long): String? = db.withConnection { c ->
         c.prepareStatement("SELECT MAX(end_date) FROM membership_records WHERE member_id = ?").use { ps ->
             ps.setLong(1, memberId)

@@ -54,10 +54,10 @@ private val ErrorText = Color(0xFFF06A66)
 fun MembershipsScreen(services: AppServices, onMessage: (String, Boolean) -> Unit) {
     var tab by remember { mutableStateOf(0) }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        GxTabs(listOf("Membership plans", "Student discount", "Renewal history"), tab, { tab = it })
+        GxTabs(listOf("Membership plans", "Discount verification", "Renewal history"), tab, { tab = it })
         when (tab) {
             0 -> PlansPanel(services, onMessage)
-            1 -> DiscountTab(services, onMessage)
+            1 -> DiscountVerificationTab(services, onMessage)
             else -> RenewalsTab(services, onMessage)
         }
     }
@@ -179,9 +179,9 @@ private fun DiscountTab(services: AppServices, onMessage: (String, Boolean) -> U
             .onFailure { onMessage(it.message ?: "Could not load the discount.", true) }
     }
 
-    GxPanel("Student discount rule", action = { StatusPill(if (enabled) "Enabled" else "Disabled", if (enabled) Gx.Green else Gx.Muted) }) {
+    GxPanel("Discount rule", action = { StatusPill(if (enabled) "Enabled" else "Disabled", if (enabled) Gx.Green else Gx.Muted) }) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            GxSwitch("Give the student discount", enabled, { enabled = it })
+            GxSwitch("Give the discount to verified members", enabled, { enabled = it })
             Text("DISCOUNT TYPE", color = Gx.Faint, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.9.sp)
             GxSegmented(DiscountType.entries.map { it.label }, typeIndex, { typeIndex = it; error = null }, Modifier.fillMaxWidth())
             GxTextField(
@@ -205,7 +205,7 @@ private fun DiscountTab(services: AppServices, onMessage: (String, Boolean) -> U
                             runCatching { services.saveDiscount(StudentDiscount(type, parsed, enabled)) }
                                 .onSuccess { r ->
                                     when (r) {
-                                        is Outcome.Ok -> onMessage("Student discount saved.", false)
+                                        is Outcome.Ok -> onMessage("Discount saved.", false)
                                         is Outcome.Fail -> error = r.message
                                     }
                                 }
@@ -221,7 +221,8 @@ private fun DiscountTab(services: AppServices, onMessage: (String, Boolean) -> U
             Rule("The discount applies to Monthly memberships only.")
             Rule("Only staff decide whether a person is an eligible student. Tick the student box when registering.")
             Rule("A certificate of registration is not required, and the student ID number is optional.")
-            Rule("Renewals keep the discount for members registered as students.")
+            Rule("Renewals keep the discount for verified members.")
+            Rule("Plans for eligible members only keep their own price. The discount is not applied on top.")
         }
     }
 }
@@ -296,5 +297,12 @@ private fun RenewalsTab(services: AppServices, onMessage: (String, Boolean) -> U
                 }
             }
         }
+    }
+}
+
+@androidx.compose.runtime.Composable
+private fun DiscountVerificationTab(services: AppServices, onMessage: (String, Boolean) -> Unit) {
+    androidx.compose.foundation.layout.Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)) {
+        EligibilityTypesPanel(services, onMessage)
     }
 }

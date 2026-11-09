@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import org.example.t3gymmanagementsystem.AppServices
+import org.example.t3gymmanagementsystem.EligibilityType
 import org.example.t3gymmanagementsystem.MembershipKind
 import org.example.t3gymmanagementsystem.MembershipStats
 import org.example.t3gymmanagementsystem.Outcome
@@ -38,6 +39,8 @@ import org.example.t3gymmanagementsystem.Plan
 import org.example.t3gymmanagementsystem.PlanInput
 import org.example.t3gymmanagementsystem.Pricing
 import org.example.t3gymmanagementsystem.presentation.components.GxButton
+import org.example.t3gymmanagementsystem.presentation.components.GxDropdown
+import org.example.t3gymmanagementsystem.presentation.components.GxSwitch
 import org.example.t3gymmanagementsystem.presentation.components.GxPanel
 import org.example.t3gymmanagementsystem.presentation.components.GxSegmented
 import org.example.t3gymmanagementsystem.presentation.components.GxTextField
@@ -54,12 +57,19 @@ private data class PlanDraft(
     val kindIndex: Int = 0,
     val price: String = "",
     val locked: Boolean = false,
+    val eligibilityTypeId: Long? = null,
+    val count: String = "1",
 )
 
-private fun durationText(kind: MembershipKind) =
-    if (kind == MembershipKind.Monthly) "1 calendar month from the start date" else "Valid for one day"
+private fun durationText(kind: MembershipKind, count: Int = 1): String =
+    if (kind == MembershipKind.Monthly) {
+        if (count == 1) "1 calendar month from the start date" else "$count calendar months from the start date"
+    } else {
+        if (count == 1) "Valid for one day" else "Valid for $count days"
+    }
 
-private fun durationValue(kind: MembershipKind) = if (kind == MembershipKind.Monthly) "1 Month" else "1 Day"
+private fun durationValue(kind: MembershipKind, count: Int = 1): String =
+    if (kind == MembershipKind.Monthly) (if (count == 1) "1 Month" else "$count Months") else (if (count == 1) "1 Day" else "$count Days")
 
 @Composable
 private fun PlanAction(text: String, onClick: () -> Unit) {
@@ -100,17 +110,20 @@ private fun PlanCard(
                     color = tone, fontSize = 16.sp, fontWeight = FontWeight.Bold,
                 )
             }
-            StatusPill("Active", Gx.Green)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                StatusPill("Active", Gx.Green)
+                plan.eligibilityName?.let { StatusPill("$it only", Gx.Amber) }
+            }
         }
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(plan.name, color = Gx.Text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-            Text(durationText(plan.kind), color = Gx.Muted, fontSize = 11.sp)
+            Text(durationText(plan.kind, plan.durationCount), color = Gx.Muted, fontSize = 11.sp)
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(Gx.Border))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
             Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text("DURATION", color = Gx.Faint, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.9.sp)
-                Text(durationValue(plan.kind), color = Gx.Text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Text(durationValue(plan.kind, plan.durationCount), color = Gx.Text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             }
             Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text("PRICE", color = Gx.Faint, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.9.sp)
@@ -155,6 +168,7 @@ fun PlansPanel(services: AppServices, onMessage: (String, Boolean) -> Unit) {
     var formError by remember { mutableStateOf<String?>(null) }
     var confirmDelete by remember { mutableStateOf<Long?>(null) }
     var reload by remember { mutableStateOf(0) }
+    var types by remember { mutableStateOf<List<EligibilityType>>(emptyList()) }
 
     val tones = listOf(Gx.Red, Gx.Amber, Gx.Blue)
 
@@ -163,6 +177,7 @@ fun PlansPanel(services: AppServices, onMessage: (String, Boolean) -> Unit) {
             .onSuccess { plans = it; loaded = true }
             .onFailure { onMessage(it.message ?: "Could not load plans.", true) }
         stats = runCatching { services.membershipStats() }.getOrNull()
+        types = runCatching { services.listEligibilityTypes() }.getOrDefault(emptyList())
         val walkIn = runCatching { services.getPricing() }.getOrNull()?.walkInCents
         walkInSet = walkIn != null
         walkInText = walkIn?.let { Money.plainInput(it) } ?: ""
@@ -170,12 +185,18 @@ fun PlansPanel(services: AppServices, onMessage: (String, Boolean) -> Unit) {
 
     fun savePlan(d: PlanDraft) {
         val cents = Money.parsePesos(d.price)
+        val count = d.count.trim().toIntOrNull()
+        val maxCount = if (d.kindIndex == 0) 120 else 3650
+        if (count == null || count < 1 || count > maxCount) {
+            formError = if (d.kindIndex == 0) "Enter the number of months (1 to 120)." else "Enter the number of days (1 to 3650)."
+            return
+        }
         if (cents == null || cents <= 0) {
             formError = "Enter a valid price."
             return
         }
         scope.launch {
-            val result = runCatching { services.savePlan(PlanInput(d.id, d.name, MembershipKind.entries[d.kindIndex], cents)) }
+            val result = runCatching { services.savePlan(PlanInput(d.id, d.name, MembershipKind.entries[d.kindIndex], cents, d.eligibilityTypeId, count)) }
             val outcome = result.getOrNull()
             when {
                 outcome is Outcome.Ok -> {
@@ -222,16 +243,38 @@ fun PlansPanel(services: AppServices, onMessage: (String, Boolean) -> Unit) {
                     GxTextField("Plan name", d.name, { draft = d.copy(name = it); formError = null }, Modifier.fillMaxWidth(), placeholder = "e.g. Regular Monthly")
                     Text("DURATION", color = Gx.Faint, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.9.sp)
                     GxSegmented(
-                        MembershipKind.entries.map { it.label }, d.kindIndex,
+                        listOf("Months", "Days"), d.kindIndex,
                         { if (!d.locked) draft = d.copy(kindIndex = it) },
                         Modifier.fillMaxWidth(),
                     )
                     Text(
                         if (d.locked) "The duration can't change because members have used this plan."
-                        else durationText(MembershipKind.entries[d.kindIndex]),
+                        else durationText(MembershipKind.entries[d.kindIndex], d.count.trim().toIntOrNull() ?: 1),
                         color = Gx.Muted, fontSize = 11.sp,
                     )
+                    GxTextField(if (d.kindIndex == 0) "Number of months" else "Number of days", d.count, { draft = d.copy(count = it.filter { ch -> ch.isDigit() }.take(4)); formError = null }, Modifier.fillMaxWidth(), placeholder = "e.g. 3")
                     GxTextField("Price (PHP)", d.price, { draft = d.copy(price = it); formError = null }, Modifier.fillMaxWidth(), placeholder = "Amount in pesos")
+                    GxSwitch(
+                        "Discount plan: only eligible members can take it",
+                        d.eligibilityTypeId != null,
+                        { draft = d.copy(eligibilityTypeId = if (it) types.firstOrNull()?.id else null) },
+                    )
+                    if (d.eligibilityTypeId != null) {
+                        GxDropdown(
+                            types.map { it.name },
+                            types.indexOfFirst { it.id == d.eligibilityTypeId }.coerceAtLeast(0),
+                            { draft = d.copy(eligibilityTypeId = types.getOrNull(it)?.id) },
+                            Modifier.fillMaxWidth(),
+                        )
+                    }
+                    Text(
+                        when {
+                            types.isEmpty() -> "Add an eligibility type first (Memberships > Discount verification)."
+                            d.eligibilityTypeId == null -> "Any member can take this plan."
+                            else -> "Only members verified as this type at registration can take this plan. Set its price as the discounted price."
+                        },
+                        color = Gx.Muted, fontSize = 11.sp,
+                    )
                     formError?.let { Text(it, color = PlanErrorText, fontSize = 12.sp) }
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End) {
                         PlanAction("Cancel") { draft = null; formError = null }
@@ -259,7 +302,7 @@ fun PlansPanel(services: AppServices, onMessage: (String, Boolean) -> Unit) {
                                 tone = tones[(rowIndex * 3 + colIndex) % tones.size],
                                 confirming = confirmDelete == p.id,
                                 onEdit = {
-                                    draft = PlanDraft(p.id, p.name, p.kind.ordinal, Money.plainInput(p.priceCents), p.inUse)
+                                    draft = PlanDraft(p.id, p.name, p.kind.ordinal, Money.plainInput(p.priceCents), p.inUse, p.eligibilityTypeId, p.durationCount.toString())
                                     formError = null
                                 },
                                 onAskDelete = { confirmDelete = p.id },

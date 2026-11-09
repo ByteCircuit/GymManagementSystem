@@ -1,4 +1,6 @@
 package org.example.t3gymmanagementsystem.presentation.screens
+import androidx.compose.foundation.BorderStroke
+import org.example.t3gymmanagementsystem.Outcome
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -83,6 +85,10 @@ fun PosScreen(services: AppServices, onMessage: (String, Boolean) -> Unit) {
     var methodIndex by remember { mutableStateOf(0) }
     var note by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
+    var voidRef by remember { mutableStateOf<String?>(null) }
+    var voidReason by remember { mutableStateOf("") }
+    var voidBusy by remember { mutableStateOf(false) }
+    val voidScope = rememberCoroutineScope()
 
     LaunchedEffect(tick) {
         products = runCatching { services.listProducts("", null, StockFilter.All) }.getOrDefault(emptyList())
@@ -158,12 +164,46 @@ fun PosScreen(services: AppServices, onMessage: (String, Boolean) -> Unit) {
 
             GxPanel("Recent product purchases") {
                 Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    val toVoid = voidRef
+                    if (toVoid != null) {
+                        Column(
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(7.dp)).background(Gx.Surface2)
+                                .border(BorderStroke(1.dp, Gx.Border), RoundedCornerShape(7.dp)).padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Text("Void sale $toVoid", color = Gx.Text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            Text("The items go back into stock and the sale stops counting in payments and reports. The record is kept.", color = Gx.Muted, fontSize = 11.sp)
+                            GxTextField("Reason", voidReason, { voidReason = it }, Modifier.fillMaxWidth(), placeholder = "e.g. Wrong item rung up")
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                GxButton("Confirm void", onClick = {
+                                    voidBusy = true
+                                    voidScope.launch {
+                                        val r = runCatching { services.voidProductSale(toVoid, voidReason) }.getOrNull()
+                                        voidBusy = false
+                                        if (r is Outcome.Ok) {
+                                            onMessage("Sale $toVoid voided. Stock returned.", false)
+                                            voidRef = null
+                                            voidReason = ""
+                                            products = runCatching { services.listProducts("", null, StockFilter.All) }.getOrDefault(emptyList())
+                                            recent = runCatching { services.recentProductSales() }.getOrDefault(emptyList())
+                                        } else if (r is Outcome.Fail) {
+                                            onMessage(r.message, true)
+                                        } else {
+                                            onMessage("The sale could not be voided.", true)
+                                        }
+                                    }
+                                }, enabled = !voidBusy)
+                                GxButton("Cancel", onClick = { voidRef = null; voidReason = "" })
+                            }
+                        }
+                    }
                     Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp)) {
                         PosTh("TRANSACTION", 1.5f)
                         PosTh("MEMBER / CUSTOMER", 1.6f)
                         PosTh("ITEMS PURCHASED", 2.4f)
                         PosTh("TOTAL", 1f)
                         PosTh("TIME", 1.3f)
+                        PosTh("", 0.8f)
                     }
                     PosLine()
                     if (recent.isEmpty()) {
@@ -179,6 +219,7 @@ fun PosScreen(services: AppServices, onMessage: (String, Boolean) -> Unit) {
                             Text(r.items, color = Gx.TextSoft, fontSize = 11.sp, modifier = Modifier.weight(2.4f))
                             Text(Money.format(r.totalCents), color = Gx.Text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                             Text(r.timeLabel, color = Gx.Muted, fontSize = 11.sp, modifier = Modifier.weight(1.3f))
+                            Text("Void", color = Gx.Red, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(0.8f).clickable { voidRef = r.reference; voidReason = "" })
                         }
                         PosLine()
                     }

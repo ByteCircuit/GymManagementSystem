@@ -327,7 +327,7 @@ private fun SalesTab(b: ReportBundle) {
             StatCard("Total revenue", Money.format(cur.revenueCents), changeHint(cur.revenueCents, prev.revenueCents), "card", Gx.Green, Modifier.weight(1f))
             StatCard("Transactions", cur.transactions.toString(), changeHint(cur.transactions.toLong(), prev.transactions.toLong()), "card", Gx.Blue, Modifier.weight(1f))
             StatCard("Average sale", Money.format(average), "Revenue per transaction", "card", Gx.Amber, Modifier.weight(1f))
-            StatCard("Discounts given", Money.format(cur.discountCents), "Student discounts", "alert", Gx.Red, Modifier.weight(1f))
+            StatCard("Discounts given", Money.format(cur.discountCents), "Verified discounts", "alert", Gx.Red, Modifier.weight(1f))
         }
         GxPanel("Revenue by source") { RevenueChart(b) }
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.Top) {
@@ -364,6 +364,18 @@ private fun InventoryTab(b: ReportBundle) {
             StatCard("Product revenue", Money.format(cur.productCents), changeHint(cur.productCents, prev.productCents), "card", Gx.Green, Modifier.weight(1f))
             StatCard("Low stock now", (b.stockAlerts.size - out).toString(), "At or below the product's level", "alert", Gx.Amber, Modifier.weight(1f))
             StatCard("Out of stock now", out.toString(), "Restock required", "alert", Gx.Red, Modifier.weight(1f))
+        }
+        GxPanel("Stock count") {
+            ReportTable(
+                listOf("Product", "SKU", "Category", "In stock", "Low level", "Status"),
+                b.stockCounts.map {
+                    listOf(it.name, it.sku, it.category, it.stock.toString(), it.lowLevel.toString(), if (it.stock == 0) "Out of stock" else if (it.stock <= it.lowLevel) "Low" else "OK")
+                },
+                listOf(2f, 1.1f, 1.2f, 0.9f, 0.8f, 1f), "No active products.",
+            ) { r, i, _ ->
+                val sc = b.stockCounts[r]
+                if (i != 5) null else if (sc.stock == 0) Gx.Red else if (sc.stock <= sc.lowLevel) Gx.Amber else Gx.Green
+            }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.Top) {
             Column(Modifier.weight(1.4f)) {

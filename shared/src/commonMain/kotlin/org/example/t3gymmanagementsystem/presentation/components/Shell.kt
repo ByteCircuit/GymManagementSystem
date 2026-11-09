@@ -118,9 +118,9 @@ private fun SystemState(lastBackupLabel: String) {
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Box(Modifier.size(7.dp).clip(CircleShape).background(Gx.Green))
-            Text("Local system ready", color = Gx.Text, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+            Text("Database connected", color = Gx.Text, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
         }
-        Text("SQLite database connected", color = Color(0xFF74747B), fontSize = 10.sp, modifier = Modifier.padding(start = 15.dp, top = 4.dp, bottom = 10.dp))
+        Text("Backup Reminder", color = Color(0xFF74747B), fontSize = 10.sp, modifier = Modifier.padding(start = 15.dp, top = 4.dp, bottom = 10.dp))
         Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0xFF28282A)))
         Row(Modifier.padding(top = 9.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
             GxIcon("database", Color(0xFF797980), 14.dp)

@@ -42,7 +42,7 @@ fun NfcGlyph(tint: Color, size: Dp = 14.dp) {
 @Composable
 fun NfcHint(text: String, modifier: Modifier = Modifier) {
     Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-        NfcGlyph(Gx.Blue, 10.dp)
+        NfcGlyph(Gx.Blue, 10.dp,)
         Text(text, color = Gx.Muted, fontSize = 10.sp)
     }
 }

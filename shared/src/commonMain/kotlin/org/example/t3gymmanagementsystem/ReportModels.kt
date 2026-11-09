@@ -48,6 +48,7 @@ data class MethodLine(val method: String, val count: Int, val cents: Long)
 data class TypeLine(val label: String, val count: Int, val cents: Long)
 data class TopProduct(val name: String, val sku: String, val units: Int, val cents: Long)
 data class StockAlert(val name: String, val sku: String, val stock: Int, val lowLevel: Int)
+data class StockCount(val name: String, val sku: String, val category: String, val stock: Int, val lowLevel: Int)
 data class StatusCounts(val total: Int, val active: Int, val expired: Int, val none: Int)
 
 data class ReportBundle(
@@ -68,6 +69,7 @@ data class ReportBundle(
     val denied: Int,
     val peakHour: String?,
     val stockAlerts: List<StockAlert>,
+    val stockCounts: List<StockCount> = emptyList(),
 )
 
 data class ReportSection(val title: String, val headers: List<String>, val rows: List<List<String>>)
@@ -199,6 +201,7 @@ fun ReportBundle.document(tab: Int): ReportDocument {
                 ),
             ),
             ReportSection("Top selling products", listOf("Product", "SKU", "Units", "Revenue"), topProducts.map { listOf(it.name, it.sku, it.units.toString(), Money.format(it.cents)) }),
+            ReportSection("Stock count (now)", listOf("Product", "SKU", "Category", "In stock", "Low-stock level", "Status"), stockCounts.map { listOf(it.name, it.sku, it.category, it.stock.toString(), it.lowLevel.toString(), if (it.stock == 0) "Out of stock" else if (it.stock <= it.lowLevel) "Low" else "OK") }),
             ReportSection("Needs restocking (now)", listOf("Product", "SKU", "Stock", "Low-stock level"), stockAlerts.map { listOf(it.name, it.sku, it.stock.toString(), it.lowLevel.toString()) }),
         )
     }

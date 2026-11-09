@@ -20,6 +20,9 @@ interface AppServices {
     suspend fun quoteRenewal(memberId: Long, kind: MembershipKind): Outcome<Quote>
 
     suspend fun getDiscount(): StudentDiscount?
+    suspend fun listEligibilityTypes(): List<EligibilityType> = emptyList()
+    suspend fun saveEligibilityType(name: String): Outcome<Long> = Outcome.Fail("Not supported.")
+    suspend fun deleteEligibilityType(id: Long): Outcome<String> = Outcome.Fail("Not supported.")
     suspend fun saveDiscount(discount: StudentDiscount): Outcome<Unit>
     suspend fun membershipStats(): MembershipStats
     suspend fun renewalHistory(query: String, kind: MembershipKind?): List<RenewalRow>
@@ -65,6 +68,7 @@ interface AppServices {
     suspend fun adjustStock(productId: Long, counted: Int, reason: String): Outcome<Unit>
     suspend fun stockMovements(): List<MovementRow>
     suspend fun sellProducts(memberId: Long?, lines: List<CartLine>, payment: PaymentInfo): Outcome<ProductSaleResult>
+    suspend fun voidProductSale(reference: String, reason: String): Outcome<Unit> = Outcome.Fail("Voiding sales is not available.")
     suspend fun recentProductSales(): List<ProductSaleRow>
     suspend fun lowStockCount(): Int
     suspend fun dashboard(): DashboardData

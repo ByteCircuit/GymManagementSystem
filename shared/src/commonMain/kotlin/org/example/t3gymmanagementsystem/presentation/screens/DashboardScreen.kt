@@ -65,9 +65,9 @@ private fun QuickAction(label: String, primary: Boolean, onClick: () -> Unit) {
             .background(if (primary) Gx.Red else Gx.Input)
             .border(1.dp, if (primary) Gx.Red else Gx.Border, shape)
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 5.dp),
+            .padding(horizontal = 22.dp, vertical = 11.dp),
     ) {
-        Text(label, color = Gx.Text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        Text(label, color = Gx.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 
@@ -126,12 +126,12 @@ fun DashboardScreen(
 
     val d = data
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        GxPanel("Quick actions") {
+        GxPanel("Quick actions", headerHeight = 44.dp) {
             Row(Modifier.padding(15.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                onRegister?.let { QuickAction("Register member", true, it) }
-                onPayments?.let { QuickAction("Payments", false, it) }
-                onCheckIn?.let { QuickAction("Check in member", false, it) }
+                onCheckIn?.let { QuickAction("Check in member", true, it) }
                 onSale?.let { QuickAction("New sale", false, it) }
+                onRegister?.let { QuickAction("Register member", false, it) }
+                onPayments?.let { QuickAction("Payments", false, it) }
             }
         }
 

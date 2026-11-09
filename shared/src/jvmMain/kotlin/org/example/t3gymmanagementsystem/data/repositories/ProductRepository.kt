@@ -38,6 +38,10 @@ data class ProductSaleDb(
     val totalCents: Long,
 )
 
+data class SaleHeadDb(val id: Long, val status: String)
+
+data class SaleLineDb(val productId: Long, val quantity: Int)
+
 class ProductRepository(private val db: DatabaseManager) {
 
     private fun product(rs: ResultSet) = ProductDb(
@@ -247,6 +251,30 @@ class ProductRepository(private val db: DatabaseManager) {
             ps.executeUpdate()
         }
     }
+
+    // ---- void a sale (called inside an open transaction) ----
+
+    fun findSale(c: Connection, reference: String): SaleHeadDb? =
+        c.prepareStatement("SELECT id, status FROM transactions WHERE reference = ? AND type = 'PRODUCT_SALE'").use { ps ->
+            ps.setString(1, reference)
+            ps.executeQuery().use { rs -> if (rs.next()) SaleHeadDb(rs.getLong(1), rs.getString(2)) else null }
+        }
+
+    fun saleLines(c: Connection, transactionId: Long): List<SaleLineDb> =
+        c.prepareStatement("SELECT product_id, quantity FROM transaction_items WHERE transaction_id = ? AND product_id IS NOT NULL").use { ps ->
+            ps.setLong(1, transactionId)
+            ps.executeQuery().use { rs ->
+                val list = mutableListOf<SaleLineDb>()
+                while (rs.next()) list += SaleLineDb(rs.getLong(1), rs.getInt(2))
+                list
+            }
+        }
+
+    fun markCancelled(c: Connection, transactionId: Long): Boolean =
+        c.prepareStatement("UPDATE transactions SET status = 'CANCELLED' WHERE id = ? AND status = 'COMPLETED'").use { ps ->
+            ps.setLong(1, transactionId)
+            ps.executeUpdate() == 1
+        }
 
     private companion object {
         const val COLS = "id, name, sku, category, price_cents, stock, low_stock_level, active"

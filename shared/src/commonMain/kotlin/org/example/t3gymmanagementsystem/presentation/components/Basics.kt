@@ -79,7 +79,7 @@ fun GxPanel(
     title: String,
     modifier: Modifier = Modifier,
     action: @Composable (() -> Unit)? = null,
-    content: @Composable () -> Unit,
+    headerHeight: androidx.compose.ui.unit.Dp = 60.dp, content: @Composable () -> Unit,
 ) {
     Column(
         modifier = modifier
@@ -88,7 +88,7 @@ fun GxPanel(
             .border(BorderStroke(1.dp, Gx.Border), RoundedCornerShape(7.dp)),
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().height(60.dp).padding(horizontal = 12.dp),
+            modifier = Modifier.fillMaxWidth().height(headerHeight).padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {

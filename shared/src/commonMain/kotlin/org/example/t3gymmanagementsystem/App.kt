@@ -1,4 +1,5 @@
 package org.example.t3gymmanagementsystem
+import org.example.t3gymmanagementsystem.presentation.navigation.ScreenIntent
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -130,9 +131,9 @@ private fun MainShell(services: AppServices, username: String, onLogout: () -> U
                             Screen.Memberships -> MembershipsScreen(services, notify)
                             Screen.Dashboard -> DashboardScreen(
                                 services, notify,
-                                onRegister = { screen = Screen.Members },
+                                onRegister = { ScreenIntent.requestRegister(); screen = Screen.Members },
                                 onPayments = { screen = Screen.Payments },
-                                onCheckIn = { screen = Screen.Attendance },
+                                onCheckIn = { ScreenIntent.requestAttendanceNfc(); screen = Screen.Attendance },
                                 onSale = { screen = Screen.PointOfSale },
                                 onMembers = { screen = Screen.Members },
                                 onAttendance = { screen = Screen.Attendance },

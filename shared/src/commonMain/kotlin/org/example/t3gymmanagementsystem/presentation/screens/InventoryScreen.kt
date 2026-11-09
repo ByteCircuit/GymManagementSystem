@@ -386,13 +386,22 @@ private fun StockForm(
 
 @Composable
 private fun MovementsTab(services: AppServices, tick: Int) {
+    var filter by remember { mutableStateOf(0) }
     var rows by remember { mutableStateOf<List<MovementRow>>(emptyList()) }
     var loaded by remember { mutableStateOf(false) }
     LaunchedEffect(tick) {
         rows = runCatching { services.stockMovements() }.getOrDefault(emptyList())
         loaded = true
     }
-    GxPanel("Stock movements") {
+    val shown = when (filter) {
+        1 -> rows.filter { it.kindLabel == "Restock" }
+        2 -> rows.filter { it.kindLabel == "Sale" }
+        3 -> rows.filter { it.kindLabel == "Voided sale" }
+        else -> rows
+    }
+    GxPanel("Stock movements", action = {
+        GxDropdown(listOf("All movements", "Restocks", "Sales", "Voided sales"), filter, { filter = it }, Modifier.width(190.dp))
+    }) {
         Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp)) {
                 InvTh("DATE & TIME", 1.5f)
@@ -403,10 +412,10 @@ private fun MovementsTab(services: AppServices, tick: Int) {
                 InvTh("NOTE", 2f)
             }
             InvLine()
-            if (rows.isEmpty()) {
-                Text(if (!loaded) "Loading..." else "No stock movements yet.", color = Gx.Muted, fontSize = 12.sp, modifier = Modifier.padding(8.dp))
+            if (shown.isEmpty()) {
+                Text(if (!loaded) "Loading..." else if (rows.isEmpty()) "No stock movements yet." else "No movements match.", color = Gx.Muted, fontSize = 12.sp, modifier = Modifier.padding(8.dp))
             }
-            rows.forEach { r ->
+            shown.forEach { r ->
                 Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(r.timeLabel, color = Gx.TextSoft, fontSize = 12.sp, modifier = Modifier.weight(1.5f))
                     Column(Modifier.weight(2f)) {
